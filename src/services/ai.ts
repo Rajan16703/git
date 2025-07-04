@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { HfInference } from '@huggingface/inference';
+import axios from 'axios';
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 const hf = new HfInference(import.meta.env.VITE_HUGGINGFACE_API_KEY);
@@ -49,18 +50,55 @@ When analyzing profiles, consider:
 export async function testHuggingFaceAPI(): Promise<boolean> {
   try {
     console.log('Testing Hugging Face API...');
-    const response = await hf.textGeneration({
-      model: 'gpt2',
-      inputs: 'Hello, this is a test.',
-      parameters: {
-        max_new_tokens: 20,
-        temperature: 0.7,
-        do_sample: true,
-      }
-    });
     
-    console.log('Hugging Face API Response:', response);
-    return response && response.generated_text ? true : false;
+    // Test with multiple approaches
+    try {
+      // Method 1: Using HfInference
+      const response = await hf.textGeneration({
+        model: 'microsoft/DialoGPT-medium',
+        inputs: 'Hello, this is a test.',
+        parameters: {
+          max_new_tokens: 20,
+          temperature: 0.7,
+          do_sample: true,
+        }
+      });
+      
+      console.log('Hugging Face API Response (HfInference):', response);
+      if (response && response.generated_text) {
+        return true;
+      }
+    } catch (error) {
+      console.log('HfInference method failed, trying axios...');
+    }
+
+    // Method 2: Using axios directly
+    try {
+      const axiosResponse = await axios.post(
+        'https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium',
+        {
+          inputs: 'Hello, this is a test.',
+          parameters: {
+            max_new_tokens: 20,
+            temperature: 0.7,
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+      
+      console.log('Hugging Face API Response (Axios):', axiosResponse.data);
+      return axiosResponse.data && Array.isArray(axiosResponse.data) && axiosResponse.data.length > 0;
+    } catch (error) {
+      console.error('Axios method also failed:', error);
+    }
+
+    return false;
   } catch (error) {
     console.error('Hugging Face API Error:', error);
     return false;
@@ -95,9 +133,37 @@ export async function getProfileAdvice(profile1: any, profile2: any) {
       Provide a comprehensive analysis with actionable insights.
     `;
 
-    const result = await chatModel.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    // Try Gemini first
+    try {
+      const result = await chatModel.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      if (text && text.trim().length > 0) {
+        return text;
+      }
+    } catch (geminiError) {
+      console.log('Gemini failed, trying Hugging Face...');
+    }
+
+    // Fallback to Hugging Face
+    try {
+      const hfResponse = await hf.textGeneration({
+        model: 'microsoft/DialoGPT-medium',
+        inputs: prompt.substring(0, 500), // Truncate for HF
+        parameters: {
+          max_new_tokens: 200,
+          temperature: 0.7,
+        }
+      });
+      
+      if (hfResponse && hfResponse.generated_text) {
+        return hfResponse.generated_text;
+      }
+    } catch (hfError) {
+      console.error('Hugging Face also failed:', hfError);
+    }
+
+    return 'Sorry, I couldn\'t generate the analysis at the moment. Both AI services are temporarily unavailable. Please try again later!';
   } catch (error) {
     console.error('Error getting AI analysis:', error);
     return 'Sorry, I couldn\'t generate the analysis at the moment. The AI service might be temporarily unavailable. Please try again later!';
@@ -107,7 +173,7 @@ export async function getProfileAdvice(profile1: any, profile2: any) {
 export async function getChatbotResponse(userMessage: string, context?: any) {
   try {
     // Check if we have valid API keys
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+    if (!import.meta.env.VITE_GEMINI_API_KEY && !import.meta.env.VITE_HUGGINGFACE_API_KEY) {
       return 'AI service is not properly configured. Please check the API keys.';
     }
 
@@ -120,15 +186,47 @@ Please provide helpful, specific advice related to GitHub profiles, repositories
 
 User Question: ${userMessage}`;
 
-    const result = await chatModel.generateContent(systemPrompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text || text.trim().length === 0) {
-      return 'I apologize, but I couldn\'t generate a proper response. Please try rephrasing your question.';
+    // Try Gemini first
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+      try {
+        const result = await chatModel.generateContent(systemPrompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (text && text.trim().length > 0) {
+          return text;
+        }
+      } catch (geminiError) {
+        console.log('Gemini failed, trying Hugging Face...');
+      }
+    }
+
+    // Fallback to Hugging Face
+    if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
+      try {
+        const hfResponse = await hf.textGeneration({
+          model: 'microsoft/DialoGPT-medium',
+          inputs: `User: ${userMessage}\nAssistant:`,
+          parameters: {
+            max_new_tokens: 150,
+            temperature: 0.7,
+            do_sample: true,
+          }
+        });
+        
+        if (hfResponse && hfResponse.generated_text) {
+          // Clean up the response
+          const cleanResponse = hfResponse.generated_text
+            .replace(`User: ${userMessage}\nAssistant:`, '')
+            .trim();
+          return cleanResponse || 'I understand your question about GitHub. Let me help you with that!';
+        }
+      } catch (hfError) {
+        console.error('Hugging Face also failed:', hfError);
+      }
     }
     
-    return text;
+    return 'I apologize, but I couldn\'t generate a proper response. Please try rephrasing your question.';
   } catch (error) {
     console.error('Error getting chatbot response:', error);
     
@@ -147,7 +245,7 @@ User Question: ${userMessage}`;
 
 export async function analyzeProfile(username: string) {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+    if (!import.meta.env.VITE_GEMINI_API_KEY && !import.meta.env.VITE_HUGGINGFACE_API_KEY) {
       return 'AI service is not properly configured. Please check the API keys.';
     }
 
@@ -164,15 +262,42 @@ export async function analyzeProfile(username: string) {
     
     Note: You should provide general advice based on best practices since you cannot access real-time GitHub data.`;
 
-    const result = await chatModel.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text || text.trim().length === 0) {
-      return 'Unable to analyze profile at the moment. Please try again later.';
+    // Try Gemini first
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+      try {
+        const result = await chatModel.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (text && text.trim().length > 0) {
+          return text;
+        }
+      } catch (geminiError) {
+        console.log('Gemini failed, trying Hugging Face...');
+      }
+    }
+
+    // Fallback to Hugging Face
+    if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
+      try {
+        const hfResponse = await hf.textGeneration({
+          model: 'microsoft/DialoGPT-medium',
+          inputs: `Analyze GitHub profile ${username}:`,
+          parameters: {
+            max_new_tokens: 200,
+            temperature: 0.7,
+          }
+        });
+        
+        if (hfResponse && hfResponse.generated_text) {
+          return hfResponse.generated_text;
+        }
+      } catch (hfError) {
+        console.error('Hugging Face also failed:', hfError);
+      }
     }
     
-    return text;
+    return 'Unable to analyze profile at the moment. Please try again later.';
   } catch (error) {
     console.error('Error analyzing profile:', error);
     return 'Unable to analyze profile at the moment. The AI service might be temporarily unavailable. Please try again later.';
@@ -181,7 +306,7 @@ export async function analyzeProfile(username: string) {
 
 export async function compareProfiles(profile1: any, profile2: any) {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+    if (!import.meta.env.VITE_GEMINI_API_KEY && !import.meta.env.VITE_HUGGINGFACE_API_KEY) {
       return 'AI service is not properly configured. Please check the API keys.';
     }
 
@@ -210,15 +335,42 @@ export async function compareProfiles(profile1: any, profile2: any) {
     
     Make the analysis engaging and constructive.`;
 
-    const result = await chatModel.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text || text.trim().length === 0) {
-      return 'Unable to compare profiles at the moment. Please try again later.';
+    // Try Gemini first
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+      try {
+        const result = await chatModel.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (text && text.trim().length > 0) {
+          return text;
+        }
+      } catch (geminiError) {
+        console.log('Gemini failed, trying Hugging Face...');
+      }
+    }
+
+    // Fallback to Hugging Face
+    if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
+      try {
+        const hfResponse = await hf.textGeneration({
+          model: 'microsoft/DialoGPT-medium',
+          inputs: prompt.substring(0, 400), // Truncate for HF
+          parameters: {
+            max_new_tokens: 200,
+            temperature: 0.7,
+          }
+        });
+        
+        if (hfResponse && hfResponse.generated_text) {
+          return hfResponse.generated_text;
+        }
+      } catch (hfError) {
+        console.error('Hugging Face also failed:', hfError);
+      }
     }
     
-    return text;
+    return 'Unable to compare profiles at the moment. Please try again later.';
   } catch (error) {
     console.error('Error comparing profiles:', error);
     return 'Unable to compare profiles at the moment. The AI service might be temporarily unavailable. Please try again later.';
@@ -227,7 +379,7 @@ export async function compareProfiles(profile1: any, profile2: any) {
 
 export async function getRepositoryAdvice(repoData: any) {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+    if (!import.meta.env.VITE_GEMINI_API_KEY && !import.meta.env.VITE_HUGGINGFACE_API_KEY) {
       return 'AI service is not properly configured. Please check the API keys.';
     }
 
@@ -248,15 +400,42 @@ export async function getRepositoryAdvice(repoData: any) {
     
     Focus on actionable steps that will improve the repository's impact.`;
 
-    const result = await chatModel.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text || text.trim().length === 0) {
-      return 'Unable to analyze repository at the moment. Please try again later.';
+    // Try Gemini first
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+      try {
+        const result = await chatModel.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (text && text.trim().length > 0) {
+          return text;
+        }
+      } catch (geminiError) {
+        console.log('Gemini failed, trying Hugging Face...');
+      }
+    }
+
+    // Fallback to Hugging Face
+    if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
+      try {
+        const hfResponse = await hf.textGeneration({
+          model: 'microsoft/DialoGPT-medium',
+          inputs: prompt.substring(0, 300), // Truncate for HF
+          parameters: {
+            max_new_tokens: 150,
+            temperature: 0.7,
+          }
+        });
+        
+        if (hfResponse && hfResponse.generated_text) {
+          return hfResponse.generated_text;
+        }
+      } catch (hfError) {
+        console.error('Hugging Face also failed:', hfError);
+      }
     }
     
-    return text;
+    return 'Unable to analyze repository at the moment. Please try again later.';
   } catch (error) {
     console.error('Error getting repository advice:', error);
     return 'Unable to analyze repository at the moment. The AI service might be temporarily unavailable. Please try again later.';
