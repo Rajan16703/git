@@ -2,18 +2,25 @@ import React, { useState, useEffect } from 'react';
 import ProfileSearch from '../components/ProfileSearch';
 import ComparisonContainer from '../components/ComparisonContainer';
 import ComparisonResults from '../components/ComparisonResults';
-import { ProfileWithMetrics } from '../types';
+import ComparisonHistory from '../components/ComparisonHistory';
+import { ProfileWithMetrics, ComparisonHistory as ComparisonHistoryType } from '../types';
 import { fetchCompleteProfile } from '../api/github';
+import { ComparisonHistoryService } from '../services/comparisonHistory';
 import ErrorDisplay from '../components/ErrorDisplay';
-import { Github, Trophy, User, Users } from 'lucide-react';
+import { Github, Trophy, User, Users, History, Save } from 'lucide-react';
 import ShareButton from '../components/ShareButton';
+import { useUser } from '@clerk/clerk-react';
 import toast from 'react-hot-toast';
 
-const HomePage: React.FC<{ session: any }> = ({ session }) => {
+const HomePage: React.FC = () => {
+  const { user } = useUser();
   const [usernames, setUsernames] = useState<string[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [profiles, setProfiles] = useState<ProfileWithMetrics[]>([]);
+  const [currentComparisonId, setCurrentComparisonId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [autoSave, setAutoSave] = useState(true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -24,6 +31,13 @@ const HomePage: React.FC<{ session: any }> = ({ session }) => {
       setUsernames(userList);
     }
   }, []);
+
+  // Auto-save comparison when profiles change
+  useEffect(() => {
+    if (profiles.length >= 2 && user && autoSave) {
+      saveComparison();
+    }
+  }, [profiles, user, autoSave]);
 
   const handleSearch = async (username: string) => {
     if (usernames.includes(username)) {
@@ -53,6 +67,64 @@ const HomePage: React.FC<{ session: any }> = ({ session }) => {
     setProfiles(loadedProfiles);
   };
 
+  const saveComparison = async (): Promise<string> => {
+    if (!user || profiles.length === 0) {
+      throw new Error('Please sign in and add profiles to save');
+    }
+
+    try {
+      const comparison = await ComparisonHistoryService.saveComparison(
+        usernames,
+        profiles,
+        user.id
+      );
+      setCurrentComparisonId(comparison.id);
+      
+      if (!autoSave) {
+        toast.success('Comparison saved successfully!');
+      }
+      
+      return comparison.id;
+    } catch (error) {
+      console.error('Error saving comparison:', error);
+      toast.error('Failed to save comparison');
+      throw error;
+    }
+  };
+
+  const handleManualSave = async () => {
+    try {
+      await saveComparison();
+    } catch (error) {
+      // Error already handled in saveComparison
+    }
+  };
+
+  const loadComparisonFromHistory = (comparison: ComparisonHistoryType) => {
+    setUsernames(comparison.usernames);
+    setCurrentComparisonId(comparison.id);
+    
+    // Load profiles from comparison data if available
+    if (comparison.comparison_data?.profiles) {
+      const loadedProfiles = comparison.comparison_data.profiles.map((profileData: any) => ({
+        user: profileData.user,
+        metrics: profileData.metrics,
+        repos: [] // We don't store repos in history to save space
+      }));
+      setProfiles(loadedProfiles);
+    }
+    
+    setShowHistory(false);
+    toast.success('Comparison loaded from history');
+  };
+
+  const clearComparison = () => {
+    setUsernames([]);
+    setProfiles([]);
+    setCurrentComparisonId(null);
+    setSearchError(null);
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="text-center mb-12">
@@ -68,23 +140,76 @@ const HomePage: React.FC<{ session: any }> = ({ session }) => {
         <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
           Compare GitHub profiles and see who comes out on top based on stars, followers, and more!
         </p>
-        <div className="mt-4 flex justify-center gap-4">
-          <ShareButton usernames={usernames} />
-          {!session && (
+        
+        {/* Action Buttons */}
+        <div className="mt-6 flex flex-wrap justify-center gap-4">
+          <ShareButton 
+            usernames={usernames} 
+            comparisonId={currentComparisonId || undefined}
+            onSave={saveComparison}
+          />
+          
+          {user && (
+            <>
+              <button
+                onClick={handleManualSave}
+                disabled={profiles.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="h-4 w-4" />
+                Save Comparison
+              </button>
+              
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                <History className="h-4 w-4" />
+                {showHistory ? 'Hide History' : 'View History'}
+              </button>
+            </>
+          )}
+          
+          {usernames.length > 0 && (
             <button
-              onClick={() => toast.error('Please sign in to save comparisons')}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              onClick={clearComparison}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
             >
-              Save Comparison
+              Clear All
             </button>
           )}
         </div>
+
+        {/* Auto-save Toggle */}
+        {user && (
+          <div className="mt-4 flex items-center justify-center space-x-2">
+            <input
+              type="checkbox"
+              id="autosave"
+              checked={autoSave}
+              onChange={(e) => setAutoSave(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="autosave" className="text-sm text-gray-600 dark:text-gray-400">
+              Auto-save comparisons
+            </label>
+          </div>
+        )}
       </div>
 
+      {/* History Section */}
+      {showHistory && user && (
+        <div className="mb-8">
+          <ComparisonHistory onLoadComparison={loadComparisonFromHistory} />
+        </div>
+      )}
+
+      {/* Results Section */}
       {usernames.length > 0 && profiles.length > 0 && (
         <ComparisonResults profiles={profiles} />
       )}
 
+      {/* Search Section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8 border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center">
           <Users className="h-6 w-6 mr-2 text-blue-600" />
@@ -100,11 +225,19 @@ const HomePage: React.FC<{ session: any }> = ({ session }) => {
         )}
         
         <div className="mt-6">
-          <div className="flex items-center mb-4">
-            <User className="h-5 w-5 text-blue-600 mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Current Profiles ({usernames.length})
-            </h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <User className="h-5 w-5 text-blue-600 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Current Profiles ({usernames.length})
+              </h3>
+            </div>
+            
+            {currentComparisonId && (
+              <span className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded-full">
+                Saved
+              </span>
+            )}
           </div>
           
           {usernames.length > 0 ? (
@@ -132,6 +265,7 @@ const HomePage: React.FC<{ session: any }> = ({ session }) => {
         </div>
       </div>
 
+      {/* Comparison Container */}
       <ComparisonContainer 
         usernames={usernames} 
         onRemoveProfile={handleRemoveProfile} 

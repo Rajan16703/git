@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage';
 import HowItWorksPage from './pages/HowItWorksPage';
 import AboutPage from './pages/AboutPage';
 import ChatbotPage from './pages/ChatbotPage';
+import SharedComparisonPage from './pages/SharedComparisonPage';
 import AuthModal from './components/AuthModal';
 
 if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
@@ -39,6 +40,7 @@ function App() {
               <Route path="/how-it-works" element={<HowItWorksPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/chatbot" element={<ChatbotPage />} />
+              <Route path="/comparison/:shareToken" element={<SharedComparisonPage />} />
             </Routes>
           </main>
           <Footer />

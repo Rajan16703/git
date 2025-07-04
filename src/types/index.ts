@@ -59,3 +59,31 @@ export interface SavedComparison {
   usernames: string[];
   created_at: string;
 }
+
+export interface ComparisonHistory {
+  id: string;
+  user_id: string | null;
+  usernames: string[];
+  comparison_data: any;
+  share_token: string;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComparisonShare {
+  id: string;
+  comparison_id: string;
+  share_token: string;
+  shared_by: string | null;
+  view_count: number;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface ShareOptions {
+  isPublic: boolean;
+  expiresIn?: number; // hours
+  allowComments?: boolean;
+  requireAuth?: boolean;
+}
