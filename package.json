@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^4.30.3",
-    "@google/generative-ai": "^0.2.0",
     "@huggingface/inference": "^4.3.2",
     "axios": "^1.10.0",
     "lucide-react": "^0.323.0",
