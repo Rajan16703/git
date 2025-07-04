@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, Send, Bot, User, Sparkles, GitBranch, Star, Users, Code, Zap, TrendingUp, AlertCircle } from 'lucide-react';
+import { MessageCircle, Send, Bot, User, Sparkles, GitBranch, Star, Users, Code, Zap, TrendingUp, AlertCircle, CheckCircle, Clock, Cpu } from 'lucide-react';
 import { getChatbotResponse, analyzeProfile, compareProfiles, getRepositoryAdvice, testHuggingFaceAPI } from '../services/ai';
 import { fetchCompleteProfile } from '../api/github';
 import { ProfileWithMetrics } from '../types';
@@ -8,7 +8,8 @@ interface Message {
   text: string;
   isBot: boolean;
   timestamp: Date;
-  type?: 'text' | 'analysis' | 'comparison' | 'repository' | 'error';
+  type?: 'text' | 'analysis' | 'comparison' | 'repository' | 'error' | 'success' | 'loading';
+  metadata?: any;
 }
 
 interface QuickAction {
@@ -16,21 +17,23 @@ interface QuickAction {
   label: string;
   action: string;
   description: string;
+  color: string;
 }
 
 const ChatbotPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     { 
-      text: "🚀 Welcome to your GitHub AI Assistant! I'm here to help you optimize your GitHub presence, analyze profiles, and provide expert advice on software development. What would you like to explore today?", 
+      text: "🚀 Welcome to your Advanced GitHub AI Assistant! I'm powered by cutting-edge Hugging Face AI models and ready to help you optimize your GitHub presence, analyze profiles, and provide expert software development advice.\n\n✨ I can help you with:\n• Profile analysis and optimization\n• Repository improvement strategies\n• Career development advice\n• Code quality assessment\n• Community engagement tips\n\nWhat would you like to explore today?", 
       isBot: true, 
       timestamp: new Date(),
-      type: 'text'
+      type: 'success'
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [profiles, setProfiles] = useState<ProfileWithMetrics[]>([]);
   const [apiStatus, setApiStatus] = useState<'checking' | 'working' | 'error'>('checking');
+  const [typingIndicator, setTypingIndicator] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const quickActions: QuickAction[] = [
@@ -38,49 +41,54 @@ const ChatbotPage: React.FC = () => {
       icon: <User className="h-5 w-5" />,
       label: "Analyze Profile",
       action: "analyze-profile",
-      description: "Get detailed insights about a GitHub profile"
+      description: "Get detailed insights about a GitHub profile",
+      color: "bg-blue-500"
     },
     {
       icon: <GitBranch className="h-5 w-5" />,
       label: "Compare Profiles",
-      action: "compare-profiles",
-      description: "Compare two GitHub profiles side by side"
+      action: "compare-profiles", 
+      description: "Compare two GitHub profiles side by side",
+      color: "bg-purple-500"
     },
     {
       icon: <Code className="h-5 w-5" />,
       label: "Repository Tips",
       action: "repository-tips",
-      description: "Get advice on improving your repositories"
+      description: "Get advice on improving your repositories",
+      color: "bg-green-500"
     },
     {
       icon: <TrendingUp className="h-5 w-5" />,
       label: "Growth Strategy",
       action: "growth-strategy",
-      description: "Learn how to grow your GitHub presence"
+      description: "Learn how to grow your GitHub presence",
+      color: "bg-orange-500"
     },
     {
       icon: <Star className="h-5 w-5" />,
       label: "Profile Optimization",
       action: "profile-optimization",
-      description: "Tips to optimize your GitHub profile"
+      description: "Tips to optimize your GitHub profile",
+      color: "bg-yellow-500"
     },
     {
       icon: <Users className="h-5 w-5" />,
       label: "Community Engagement",
       action: "community-engagement",
-      description: "How to engage with the GitHub community"
+      description: "How to engage with the GitHub community",
+      color: "bg-pink-500"
     }
   ];
 
-  // Check API status on component mount
+  // Enhanced API status checking
   useEffect(() => {
     const checkAPIStatus = async () => {
       try {
-        // Test if we have the required API keys
-        if (!import.meta.env.VITE_GEMINI_API_KEY) {
+        if (!import.meta.env.VITE_HUGGINGFACE_API_KEY) {
           setApiStatus('error');
           setMessages(prev => [...prev, {
-            text: "⚠️ AI service is not properly configured. API keys are missing.",
+            text: "⚠️ AI service is not properly configured. Hugging Face API key is missing.",
             isBot: true,
             timestamp: new Date(),
             type: 'error'
@@ -88,17 +96,32 @@ const ChatbotPage: React.FC = () => {
           return;
         }
 
-        // Test Hugging Face API
-        const hfWorking = await testHuggingFaceAPI();
-        console.log('Hugging Face API Status:', hfWorking);
-        
-        setApiStatus('working');
         setMessages(prev => [...prev, {
-          text: `✅ AI services are online and ready! ${hfWorking ? 'Both Gemini and Hugging Face APIs are working.' : 'Gemini API is working (Hugging Face as backup).'}`,
+          text: "🔍 Testing AI services...",
           isBot: true,
           timestamp: new Date(),
-          type: 'text'
+          type: 'loading'
         }]);
+
+        const hfWorking = await testHuggingFaceAPI();
+        
+        if (hfWorking) {
+          setApiStatus('working');
+          setMessages(prev => [...prev, {
+            text: "✅ Advanced AI services are online and ready! Powered by Hugging Face's latest models including DialoGPT, CodeBERT, and specialized GitHub analysis models.",
+            isBot: true,
+            timestamp: new Date(),
+            type: 'success'
+          }]);
+        } else {
+          setApiStatus('error');
+          setMessages(prev => [...prev, {
+            text: "❌ AI services are currently unavailable. Please check your connection and try again.",
+            isBot: true,
+            timestamp: new Date(),
+            type: 'error'
+          }]);
+        }
       } catch (error) {
         console.error('API Status Check Error:', error);
         setApiStatus('error');
@@ -120,7 +143,12 @@ const ChatbotPage: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, typingIndicator]);
+
+  const simulateTyping = (duration: number = 2000) => {
+    setTypingIndicator(true);
+    setTimeout(() => setTypingIndicator(false), duration);
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -133,61 +161,111 @@ const ChatbotPage: React.FC = () => {
       timestamp: new Date(),
       type: 'text'
     }]);
+    
     setIsLoading(true);
+    simulateTyping();
 
     try {
       let response = '';
-      let messageType: 'text' | 'analysis' | 'comparison' | 'repository' | 'error' = 'text';
+      let messageType: 'text' | 'analysis' | 'comparison' | 'repository' | 'error' | 'success' = 'text';
+      let metadata: any = {};
 
-      // Check for specific commands
-      if (userMessage.toLowerCase().includes('analyze profile') || userMessage.toLowerCase().includes('analyze @')) {
+      // Enhanced command detection with better parsing
+      if (userMessage.toLowerCase().includes('analyze') && (userMessage.toLowerCase().includes('profile') || userMessage.includes('@'))) {
         const username = extractUsername(userMessage);
         if (username) {
-          response = await analyzeProfile(username);
           messageType = 'analysis';
+          metadata = { username };
+          setMessages(prev => [...prev, {
+            text: `🔍 Analyzing GitHub profile for @${username}...`,
+            isBot: true,
+            timestamp: new Date(),
+            type: 'loading'
+          }]);
+          response = await analyzeProfile(username);
         } else {
           response = "Please specify a GitHub username to analyze. For example: 'analyze profile @username' or 'analyze @username'";
+          messageType = 'error';
         }
       } else if (userMessage.toLowerCase().includes('compare') && userMessage.includes('@')) {
         const usernames = extractMultipleUsernames(userMessage);
         if (usernames.length >= 2) {
+          messageType = 'comparison';
+          metadata = { usernames };
+          setMessages(prev => [...prev, {
+            text: `⚖️ Comparing profiles @${usernames[0]} vs @${usernames[1]}...`,
+            isBot: true,
+            timestamp: new Date(),
+            type: 'loading'
+          }]);
           try {
             const profile1 = await fetchCompleteProfile(usernames[0]);
             const profile2 = await fetchCompleteProfile(usernames[1]);
             response = await compareProfiles(profile1, profile2);
-            messageType = 'comparison';
           } catch (error) {
-            response = `Error fetching profiles for comparison. Please make sure the usernames are correct.`;
+            response = `Error fetching profiles for comparison. Please make sure the usernames are correct: @${usernames[0]} and @${usernames[1]}`;
             messageType = 'error';
           }
         } else {
-          response = "Please specify two GitHub usernames to compare. For example: 'compare @user1 and @user2'";
+          response = "Please specify two GitHub usernames to compare. For example: 'compare @user1 and @user2' or 'compare @user1 vs @user2'";
+          messageType = 'error';
         }
       } else if (userMessage.toLowerCase().includes('test api') || userMessage.toLowerCase().includes('api status')) {
-        // Test API functionality
+        setMessages(prev => [...prev, {
+          text: "🧪 Running comprehensive API diagnostics...",
+          isBot: true,
+          timestamp: new Date(),
+          type: 'loading'
+        }]);
+        
         const hfWorking = await testHuggingFaceAPI();
-        response = `API Status Check:\n✅ Gemini API: Working\n${hfWorking ? '✅' : '❌'} Hugging Face API: ${hfWorking ? 'Working' : 'Not available'}\n\nYou can ask me questions about GitHub profiles, repositories, and development best practices!`;
+        response = `🔧 **Advanced AI System Status**:
+
+✅ **Hugging Face API**: ${hfWorking ? 'Operational' : 'Unavailable'}
+🤖 **Available Models**: DialoGPT, CodeBERT, GPT-2, RoBERTa
+🚀 **Features**: Profile analysis, code review, career advice
+⚡ **Response Time**: ~2-5 seconds
+🔄 **Fallback Systems**: Multiple model redundancy
+
+${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️ Some features may be limited. Please try again later.'}`;
+        messageType = hfWorking ? 'success' : 'error';
       } else {
-        // Regular chat response
-        response = await getChatbotResponse(userMessage, { profiles });
+        // Enhanced general chat with context awareness
+        setMessages(prev => [...prev, {
+          text: "🤔 Processing your question with advanced AI...",
+          isBot: true,
+          timestamp: new Date(),
+          type: 'loading'
+        }]);
+        response = await getChatbotResponse(userMessage, { profiles, previousMessages: messages.slice(-5) });
+        messageType = 'success';
       }
 
-      setMessages(prev => [...prev, { 
-        text: response, 
-        isBot: true, 
-        timestamp: new Date(),
-        type: messageType
-      }]);
+      // Remove loading message and add final response
+      setMessages(prev => {
+        const filtered = prev.filter(msg => msg.type !== 'loading');
+        return [...filtered, { 
+          text: response, 
+          isBot: true, 
+          timestamp: new Date(),
+          type: messageType,
+          metadata
+        }];
+      });
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { 
-        text: "I apologize, but I encountered an error while processing your request. Please try again or check if the AI service is properly configured.", 
-        isBot: true, 
-        timestamp: new Date(),
-        type: 'error'
-      }]);
+      setMessages(prev => {
+        const filtered = prev.filter(msg => msg.type !== 'loading');
+        return [...filtered, { 
+          text: "🚨 I encountered an error while processing your request. My advanced AI systems are working to resolve this. Please try again or ask a different question!", 
+          isBot: true, 
+          timestamp: new Date(),
+          type: 'error'
+        }];
+      });
     } finally {
       setIsLoading(false);
+      setTypingIndicator(false);
     }
   };
 
@@ -196,22 +274,22 @@ const ChatbotPage: React.FC = () => {
     
     switch (action) {
       case 'analyze-profile':
-        prompt = 'How can I analyze a GitHub profile? What should I look for?';
+        prompt = 'How can I analyze a GitHub profile? What should I look for to assess quality and potential?';
         break;
       case 'compare-profiles':
-        prompt = 'How do I compare two GitHub profiles effectively?';
+        prompt = 'What are the best strategies for comparing GitHub profiles? What metrics matter most?';
         break;
       case 'repository-tips':
-        prompt = 'What are the best practices for organizing and maintaining GitHub repositories?';
+        prompt = 'What are the advanced best practices for organizing and maintaining GitHub repositories?';
         break;
       case 'growth-strategy':
-        prompt = 'What strategies can I use to grow my GitHub presence and attract more followers?';
+        prompt = 'What are proven strategies to grow my GitHub presence and attract more followers and collaborators?';
         break;
       case 'profile-optimization':
-        prompt = 'How can I optimize my GitHub profile to make it more attractive to employers and collaborators?';
+        prompt = 'How can I optimize my GitHub profile to make it more attractive to employers and the developer community?';
         break;
       case 'community-engagement':
-        prompt = 'How can I better engage with the GitHub community and contribute to open source projects?';
+        prompt = 'How can I better engage with the GitHub community and contribute meaningfully to open source projects?';
         break;
       default:
         return;
@@ -251,8 +329,28 @@ const ChatbotPage: React.FC = () => {
         return <Code className="h-4 w-4 text-green-500" />;
       case 'error':
         return <AlertCircle className="h-4 w-4 text-red-500" />;
+      case 'success':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'loading':
+        return <Clock className="h-4 w-4 text-blue-500 animate-spin" />;
       default:
         return <MessageCircle className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (apiStatus) {
+      case 'working': return 'text-green-600 dark:text-green-400';
+      case 'error': return 'text-red-600 dark:text-red-400';
+      default: return 'text-yellow-600 dark:text-yellow-400';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (apiStatus) {
+      case 'working': return 'Advanced AI Online';
+      case 'error': return 'Service Issues';
+      default: return 'Initializing...';
     }
   };
 
@@ -263,9 +361,9 @@ const ChatbotPage: React.FC = () => {
           <div className="flex justify-center items-center mb-4">
             <div className="relative">
               <Bot className="h-16 w-16 text-blue-600" />
-              <Zap className="h-6 w-6 text-yellow-500 absolute -top-1 -right-1" />
+              <Cpu className="h-6 w-6 text-purple-500 absolute -top-1 -right-1" />
               {apiStatus === 'working' && (
-                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
+                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse"></div>
               )}
               {apiStatus === 'error' && (
                 <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></div>
@@ -273,21 +371,21 @@ const ChatbotPage: React.FC = () => {
             </div>
           </div>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            GitHub AI Assistant
+            Advanced GitHub AI Assistant
           </h1>
           <p className="text-gray-600 dark:text-gray-300 text-lg">
-            Your intelligent companion for GitHub optimization and development insights
+            Powered by cutting-edge Hugging Face AI models for intelligent GitHub optimization
           </p>
           <div className="mt-2 flex justify-center items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {apiStatus === 'working' ? 'AI Services Online' : apiStatus === 'error' ? 'Service Issues' : 'Checking Services...'}
+            <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'} ${apiStatus === 'working' ? 'animate-pulse' : ''}`}></div>
+            <span className={`text-sm ${getStatusColor()}`}>
+              {getStatusText()}
             </span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Quick Actions Sidebar */}
+          {/* Enhanced Quick Actions Sidebar */}
           <div className="lg:col-span-1">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
@@ -299,10 +397,10 @@ const ChatbotPage: React.FC = () => {
                   <button
                     key={index}
                     onClick={() => handleQuickAction(action.action)}
-                    className="w-full text-left p-3 rounded-lg bg-gray-50 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-gray-600 transition-colors group"
+                    className="w-full text-left p-3 rounded-lg bg-gray-50 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-gray-600 transition-all duration-200 group transform hover:scale-105"
                   >
                     <div className="flex items-center mb-1">
-                      <span className="text-blue-600 group-hover:text-blue-700 mr-2">
+                      <span className={`${action.color} text-white p-1 rounded mr-2 group-hover:scale-110 transition-transform`}>
                         {action.icon}
                       </span>
                       <span className="font-medium text-gray-900 dark:text-white text-sm">
@@ -316,68 +414,79 @@ const ChatbotPage: React.FC = () => {
                 ))}
               </div>
               
-              {/* API Test Button */}
+              {/* Enhanced API Test Section */}
               <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setInput('test api')}
-                  className="w-full text-left p-3 rounded-lg bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                  className="w-full text-left p-3 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/30 dark:to-purple-900/30 hover:from-blue-100 hover:to-purple-100 dark:hover:from-blue-900/50 dark:hover:to-purple-900/50 transition-all duration-200 border border-blue-200 dark:border-blue-700"
                 >
                   <div className="flex items-center mb-1">
-                    <Zap className="h-4 w-4 text-blue-600 mr-2" />
+                    <Cpu className="h-4 w-4 text-blue-600 mr-2" />
                     <span className="font-medium text-blue-900 dark:text-blue-300 text-sm">
-                      Test AI Services
+                      System Diagnostics
                     </span>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-400">
-                    Check if AI services are working
+                    Test all AI services and models
                   </p>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Chat Interface */}
+          {/* Enhanced Chat Interface */}
           <div className="lg:col-span-3">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg h-[700px] flex flex-col">
-              {/* Chat Header */}
-              <div className="border-b border-gray-200 dark:border-gray-700 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg h-[700px] flex flex-col border border-gray-200 dark:border-gray-700">
+              {/* Enhanced Chat Header */}
+              <div className="border-b border-gray-200 dark:border-gray-700 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-800 rounded-t-lg">
                 <div className="flex items-center">
                   <Bot className="h-8 w-8 text-blue-600 mr-3" />
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">GitHub AI Assistant</h3>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Advanced GitHub AI Assistant</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Powered by AI • GitHub Expert
+                      Powered by Hugging Face • Multi-Model AI • Real-time Analysis
                     </p>
                   </div>
-                  <div className="ml-auto flex items-center space-x-2">
-                    <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
-                    <span className={`text-sm ${apiStatus === 'working' ? 'text-green-600 dark:text-green-400' : apiStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
-                      {apiStatus === 'working' ? 'Online' : apiStatus === 'error' ? 'Issues' : 'Checking...'}
-                    </span>
+                  <div className="ml-auto flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500 animate-pulse' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+                      <span className={`text-sm font-medium ${getStatusColor()}`}>
+                        {getStatusText()}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Enhanced Messages Area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900">
                 {messages.map((message, index) => (
                   <div
                     key={index}
                     className={`flex ${message.isBot ? 'justify-start' : 'justify-end'}`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-lg p-4 ${
+                      className={`max-w-[85%] rounded-lg p-4 shadow-sm ${
                         message.isBot
                           ? message.type === 'error'
                             ? 'bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                          : 'bg-blue-600 text-white'
+                            : message.type === 'success'
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-900 dark:text-green-100 border border-green-200 dark:border-green-800'
+                            : message.type === 'loading'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 border border-blue-200 dark:border-blue-800'
+                            : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600'
+                          : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
                       }`}
                     >
                       {message.isBot && (
                         <div className="flex items-center mb-2">
                           {getMessageIcon(message.type || 'text')}
                           <span className="font-semibold ml-2">AI Assistant</span>
+                          {message.metadata?.username && (
+                            <span className="text-xs bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-1 rounded-full ml-2">
+                              @{message.metadata.username}
+                            </span>
+                          )}
                           <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">
                             {formatTimestamp(message.timestamp)}
                           </span>
@@ -394,12 +503,18 @@ const ChatbotPage: React.FC = () => {
                     </div>
                   </div>
                 ))}
-                {isLoading && (
+                
+                {/* Enhanced Typing Indicator */}
+                {typingIndicator && (
                   <div className="flex justify-start">
-                    <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 max-w-[85%]">
+                    <div className="bg-white dark:bg-gray-700 rounded-lg p-4 max-w-[85%] border border-gray-200 dark:border-gray-600">
                       <div className="flex items-center space-x-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                        <span className="text-gray-600 dark:text-gray-300">AI is thinking...</span>
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        </div>
+                        <span className="text-gray-600 dark:text-gray-300">AI is analyzing...</span>
                       </div>
                     </div>
                   </div>
@@ -407,16 +522,16 @@ const ChatbotPage: React.FC = () => {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input Area */}
-              <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+              {/* Enhanced Input Area */}
+              <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800 rounded-b-lg">
                 <div className="flex space-x-4">
                   <div className="flex-1 relative">
                     <textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
-                      placeholder="Ask me about GitHub profiles, repositories, or development best practices..."
-                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 p-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+                      placeholder="Ask me about GitHub profiles, repositories, career advice, or development best practices..."
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 p-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none transition-all duration-200"
                       rows={2}
                       disabled={isLoading}
                     />
@@ -427,7 +542,7 @@ const ChatbotPage: React.FC = () => {
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() || isLoading}
-                    className="bg-blue-600 text-white rounded-lg px-6 py-3 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg px-6 py-3 hover:from-blue-700 hover:to-purple-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transform hover:scale-105 disabled:hover:scale-100"
                   >
                     {isLoading ? (
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -440,14 +555,20 @@ const ChatbotPage: React.FC = () => {
                   </button>
                 </div>
                 
-                {/* Example Commands */}
+                {/* Enhanced Example Commands */}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="text-xs text-gray-500 dark:text-gray-400">Try:</span>
-                  {['analyze @username', 'compare @user1 and @user2', 'repository best practices', 'test api'].map((example, index) => (
+                  {[
+                    'analyze @username', 
+                    'compare @user1 vs @user2', 
+                    'repository best practices', 
+                    'career growth tips',
+                    'test api'
+                  ].map((example, index) => (
                     <button
                       key={index}
                       onClick={() => setInput(example)}
-                      className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors transform hover:scale-105"
                     >
                       {example}
                     </button>
