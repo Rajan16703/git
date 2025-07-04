@@ -1,89 +1,71 @@
-// ai.ts
-import axios from 'axios';
+import { HfInference } from '@huggingface/inference';
+import { analyzeRepositoryHealth, fetchUserRepos } from '../api/github';
 
-const HF_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-const HF_API_BASE = 'https://api-inference.huggingface.co/models';
+const hf = new HfInference(import.meta.env.VITE_HUGGINGFACE_API_KEY);
 
-// ✅ Production-ready, recommended models
-export const MODELS = {
-  CHAT: 'meta-llama/Meta-Llama-3-8B-Instruct',
-  TEXT_GEN: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
-  QA: 'deepset/roberta-base-squad2',
-  CODE: 'bigcode/starcoder2-7b'
-};
+// Choose a single high-performance model
+const MODEL = 'HuggingFaceH4/zephyr-7b-beta'; // or 'mistralai/Mistral-7B-Instruct-v0.2'
 
-// 🌐 Generic request to Hugging Face model
-async function hfRequest(model: string, payload: any): Promise<any> {
-  const url = `${HF_API_BASE}/${model}`;
+// GitHub-oriented system prompt
+const SYSTEM_PROMPT = `
+You are a senior GitHub consultant. Help users with:
+- Profile analysis
+- Repository analysis
+- Contribution strategies
+- Portfolio improvement
+- Community building
+Respond clearly and helpfully.
+`;
 
+export async function getprofileAdvice(userMessage: string): Promise<string> {
   try {
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Bearer ${HF_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
+    const fullPrompt = `${SYSTEM_PROMPT}\nUser: ${userMessage}\nAssistant:`;
+    const res = await hf.textGeneration({
+      model: MODEL,
+      inputs: fullPrompt,
+      parameters: {
+        max_new_tokens: 300,
+        temperature: 0.7,
+        top_p: 0.9
+      }
     });
-
-    return response.data;
-  } catch (err: any) {
-    console.error(`❌ HF Error [${model}]:`, err?.response?.data || err.message);
-    throw new Error(`Failed to query ${model}`);
+    return res.generated_text?.replace(fullPrompt, '').trim() || 'No response.';
+  } catch (error) {
+    console.error('AI Error:', error);
+    return '⚠️ There was an error processing your request.';
   }
 }
 
-// 💬 Chat with LLaMA or Mixtral
-export async function chatWithAI(message: string): Promise<string> {
-  const payload = {
-    inputs: message,
-    options: { wait_for_model: true }
-  };
+export async function getTopRepos(username: string): Promise<string> {
+  try {
+    const repos = await fetchUserRepos(username);
+    const sorted = repos
+      .filter(r => !r.fork)
+      .sort((a, b) => b.stargazers_count - a.stargazers_count)
+      .slice(0, 5);
 
-  const response = await hfRequest(MODELS.CHAT, payload);
-  return response?.generated_text || '🤖 No response';
+    if (sorted.length === 0) return `No public repositories found for @${username}`;
+
+    let result = `📌 Top repositories of @${username}:\n`;
+    for (const repo of sorted) {
+      result += `- **${repo.name}**: ⭐ ${repo.stargazers_count}, 🍴 ${repo.forks_count}\n`;
+    }
+    return result;
+  } catch (error) {
+    return `Failed to fetch repositories for @${username}`;
+  }
 }
 
-// ✍️ General text generation
-export async function generateText(prompt: string, maxTokens = 200): Promise<string> {
-  const payload = {
-    inputs: prompt,
-    parameters: {
-      max_new_tokens: maxTokens,
-      temperature: 0.7,
-      top_p: 0.9
-    },
-    options: { wait_for_model: true }
-  };
-
-  const response = await hfRequest(MODELS.TEXT_GEN, payload);
-  return response?.[0]?.generated_text || '🤖 No output';
-}
-
-// 🧠 Question answering
-export async function answerQuestion(context: string, question: string): Promise<string> {
-  const payload = {
-    inputs: {
-      context,
-      question
-    },
-    options: { wait_for_model: true }
-  };
-
-  const response = await hfRequest(MODELS.QA, payload);
-  return response?.answer || '🤖 No answer found';
-}
-
-// 🧑‍💻 Code generation or suggestion
-export async function generateCode(prompt: string, maxTokens = 200): Promise<string> {
-  const payload = {
-    inputs: prompt,
-    parameters: {
-      max_new_tokens: maxTokens,
-      temperature: 0.6
-    },
-    options: { wait_for_model: true }
-  };
-
-  const response = await hfRequest(MODELS.CODE, payload);
-  return response?.[0]?.generated_text || '🤖 Code output not available';
+export async function getRepositoryAnalysis(owner: string, repo: string): Promise<string> {
+  try {
+    const data = await analyzeRepositoryHealth(owner, repo);
+    return `🔍 ${repo} Analysis:
+- Stars: ${data.repository.stargazers_count}
+- Issues: ${data.issues.open} open, ${data.issues.closed} closed
+- Last commit: ${data.activity.lastCommitDate || 'N/A'}
+- Contributors: ${data.contributors}
+- Health Score: ${data.healthScore}/100`;
+  } catch (e) {
+    return `❌ Could not analyze ${owner}/${repo}.`;
+  }
 }
