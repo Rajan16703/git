@@ -12,6 +12,7 @@
   "dependencies": {
     "@clerk/clerk-react": "^4.30.3",
     "@huggingface/inference": "^4.3.2",
+    "@supabase/supabase-js": "^2.50.3",
     "axios": "^1.10.0",
     "lucide-react": "^0.323.0",
     "react": "^18.2.0",
