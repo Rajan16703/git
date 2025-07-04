@@ -35,6 +35,204 @@ export async function fetchUserRepos(username: string): Promise<GitHubRepo[]> {
   }
 }
 
+export async function fetchRepository(owner: string, repo: string): Promise<GitHubRepo> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Repository ${owner}/${repo} not found`);
+      }
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository:', error);
+    throw error;
+  }
+}
+
+export async function fetchRepositoryContents(owner: string, repo: string, path: string = ''): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/contents/${path}`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository contents:', error);
+    throw error;
+  }
+}
+
+export async function fetchRepositoryLanguages(owner: string, repo: string): Promise<Record<string, number>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/languages`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository languages:', error);
+    return {};
+  }
+}
+
+export async function fetchRepositoryCommits(owner: string, repo: string, limit: number = 30): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/commits?per_page=${limit}`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository commits:', error);
+    return [];
+  }
+}
+
+export async function fetchRepositoryIssues(owner: string, repo: string, state: string = 'all'): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/issues?state=${state}&per_page=100`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository issues:', error);
+    return [];
+  }
+}
+
+export async function fetchRepositoryPullRequests(owner: string, repo: string, state: string = 'all'): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/pulls?state=${state}&per_page=100`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository pull requests:', error);
+    return [];
+  }
+}
+
+export async function fetchRepositoryContributors(owner: string, repo: string): Promise<any[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/repos/${owner}/${repo}/contributors?per_page=100`);
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching repository contributors:', error);
+    return [];
+  }
+}
+
+export async function analyzeRepositoryHealth(owner: string, repo: string): Promise<any> {
+  try {
+    const [repository, languages, commits, issues, pullRequests, contributors, contents] = await Promise.all([
+      fetchRepository(owner, repo),
+      fetchRepositoryLanguages(owner, repo),
+      fetchRepositoryCommits(owner, repo, 30),
+      fetchRepositoryIssues(owner, repo),
+      fetchRepositoryPullRequests(owner, repo),
+      fetchRepositoryContributors(owner, repo),
+      fetchRepositoryContents(owner, repo).catch(() => [])
+    ]);
+
+    // Analyze repository health metrics
+    const hasReadme = contents.some((file: any) => 
+      file.name.toLowerCase().includes('readme')
+    );
+    
+    const hasLicense = contents.some((file: any) => 
+      file.name.toLowerCase().includes('license') || file.name.toLowerCase().includes('licence')
+    );
+    
+    const hasContributing = contents.some((file: any) => 
+      file.name.toLowerCase().includes('contributing')
+    );
+    
+    const hasCodeOfConduct = contents.some((file: any) => 
+      file.name.toLowerCase().includes('code_of_conduct') || file.name.toLowerCase().includes('code-of-conduct')
+    );
+
+    // Calculate activity metrics
+    const recentCommits = commits.filter((commit: any) => {
+      const commitDate = new Date(commit.commit.author.date);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return commitDate > thirtyDaysAgo;
+    });
+
+    const openIssues = issues.filter((issue: any) => issue.state === 'open' && !issue.pull_request);
+    const closedIssues = issues.filter((issue: any) => issue.state === 'closed' && !issue.pull_request);
+    const openPRs = pullRequests.filter((pr: any) => pr.state === 'open');
+    const closedPRs = pullRequests.filter((pr: any) => pr.state === 'closed');
+
+    // Calculate health score
+    let healthScore = 0;
+    if (hasReadme) healthScore += 20;
+    if (hasLicense) healthScore += 15;
+    if (hasContributing) healthScore += 10;
+    if (hasCodeOfConduct) healthScore += 10;
+    if (repository.description) healthScore += 10;
+    if (recentCommits.length > 0) healthScore += 15;
+    if (contributors.length > 1) healthScore += 10;
+    if (repository.stargazers_count > 0) healthScore += 5;
+    if (repository.forks_count > 0) healthScore += 5;
+
+    return {
+      repository,
+      languages,
+      commits: commits.slice(0, 10), // Latest 10 commits
+      recentCommits,
+      issues: {
+        open: openIssues.length,
+        closed: closedIssues.length,
+        total: issues.length
+      },
+      pullRequests: {
+        open: openPRs.length,
+        closed: closedPRs.length,
+        total: pullRequests.length
+      },
+      contributors: contributors.length,
+      documentation: {
+        hasReadme,
+        hasLicense,
+        hasContributing,
+        hasCodeOfConduct
+      },
+      activity: {
+        recentCommits: recentCommits.length,
+        lastCommitDate: commits[0]?.commit?.author?.date || null,
+        isActive: recentCommits.length > 0
+      },
+      healthScore,
+      healthGrade: healthScore >= 80 ? 'A' : healthScore >= 60 ? 'B' : healthScore >= 40 ? 'C' : 'D'
+    };
+  } catch (error) {
+    console.error('Error analyzing repository health:', error);
+    throw error;
+  }
+}
+
 async function fetchUserContributions(username: string): Promise<number> {
   try {
     const response = await fetch(`${API_BASE_URL}/users/${username}/events`);

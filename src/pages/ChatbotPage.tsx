@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, Send, Bot, User, Sparkles, GitBranch, Star, Users, Code, Zap, TrendingUp, AlertCircle, CheckCircle, Clock, Cpu } from 'lucide-react';
+import { MessageCircle, Send, Bot, User, Sparkles, GitBranch, Star, Users, Code, Zap, TrendingUp, AlertCircle, CheckCircle, Clock, Cpu, FolderOpen, Search } from 'lucide-react';
 import { getChatbotResponse, analyzeProfile, compareProfiles, getRepositoryAdvice, testHuggingFaceAPI } from '../services/ai';
 import { fetchCompleteProfile } from '../api/github';
 import { ProfileWithMetrics } from '../types';
@@ -23,7 +23,7 @@ interface QuickAction {
 const ChatbotPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     { 
-      text: "🚀 Welcome to your Advanced GitHub AI Assistant! I'm powered by cutting-edge Hugging Face AI models and ready to help you optimize your GitHub presence, analyze profiles, and provide expert software development advice.\n\n✨ I can help you with:\n• Profile analysis and optimization\n• Repository improvement strategies\n• Career development advice\n• Code quality assessment\n• Community engagement tips\n\nWhat would you like to explore today?", 
+      text: "🚀 Welcome to your Advanced GitHub AI Assistant! I'm powered by cutting-edge Hugging Face AI models and ready to help you optimize your GitHub presence, analyze profiles, and provide expert software development advice.\n\n✨ I can help you with:\n• Profile analysis and optimization\n• Repository analysis and improvement\n• Career development advice\n• Code quality assessment\n• Community engagement tips\n\n🔍 **New Feature**: Repository Analysis!\nTry: \"analyze facebook/react\" or \"repos of username\"\n\nWhat would you like to explore today?", 
       isBot: true, 
       timestamp: new Date(),
       type: 'success'
@@ -43,6 +43,20 @@ const ChatbotPage: React.FC = () => {
       action: "analyze-profile",
       description: "Get detailed insights about a GitHub profile",
       color: "bg-blue-500"
+    },
+    {
+      icon: <FolderOpen className="h-5 w-5" />,
+      label: "Repository Analysis",
+      action: "repository-analysis",
+      description: "Analyze any GitHub repository in detail",
+      color: "bg-indigo-500"
+    },
+    {
+      icon: <Search className="h-5 w-5" />,
+      label: "User Repositories",
+      action: "user-repositories",
+      description: "List and explore user's repositories",
+      color: "bg-cyan-500"
     },
     {
       icon: <GitBranch className="h-5 w-5" />,
@@ -108,7 +122,7 @@ const ChatbotPage: React.FC = () => {
         if (hfWorking) {
           setApiStatus('working');
           setMessages(prev => [...prev, {
-            text: "✅ Advanced AI services are online and ready! Powered by Hugging Face's latest models including DialoGPT, CodeBERT, and specialized GitHub analysis models.",
+            text: "✅ Advanced AI services are online and ready! Powered by Hugging Face's latest models including DialoGPT, CodeBERT, and specialized GitHub analysis models.\n\n🆕 **Repository Analysis Feature**: Now you can analyze any GitHub repository by typing commands like:\n• \"analyze facebook/react\"\n• \"check microsoft/vscode\"\n• \"repos of username\"",
             isBot: true,
             timestamp: new Date(),
             type: 'success'
@@ -223,9 +237,14 @@ const ChatbotPage: React.FC = () => {
 
 ✅ **Hugging Face API**: ${hfWorking ? 'Operational' : 'Unavailable'}
 🤖 **Available Models**: DialoGPT, CodeBERT, GPT-2, RoBERTa
-🚀 **Features**: Profile analysis, code review, career advice
+🚀 **Features**: Profile analysis, repository analysis, code review, career advice
 ⚡ **Response Time**: ~2-5 seconds
 🔄 **Fallback Systems**: Multiple model redundancy
+
+🆕 **Repository Analysis**: 
+• Analyze any repo: "analyze owner/repo"
+• List user repos: "repos of username"
+• Get detailed insights on code quality, documentation, and community health
 
 ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️ Some features may be limited. Please try again later.'}`;
         messageType = hfWorking ? 'success' : 'error';
@@ -275,6 +294,12 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
     switch (action) {
       case 'analyze-profile':
         prompt = 'How can I analyze a GitHub profile? What should I look for to assess quality and potential?';
+        break;
+      case 'repository-analysis':
+        prompt = 'How can I analyze a GitHub repository? What metrics and factors should I consider?';
+        break;
+      case 'user-repositories':
+        prompt = 'How can I explore and analyze all repositories of a specific user?';
         break;
       case 'compare-profiles':
         prompt = 'What are the best strategies for comparing GitHub profiles? What metrics matter most?';
@@ -431,6 +456,28 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                   </p>
                 </button>
               </div>
+
+              {/* Repository Examples Section */}
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                  🔍 Try Repository Analysis
+                </h4>
+                <div className="space-y-2">
+                  {[
+                    'analyze facebook/react',
+                    'check microsoft/vscode',
+                    'repos of torvalds'
+                  ].map((example, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setInput(example)}
+                      className="w-full text-left text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -444,7 +491,7 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Advanced GitHub AI Assistant</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Powered by Hugging Face • Multi-Model AI • Real-time Analysis
+                      Powered by Hugging Face • Multi-Model AI • Repository Analysis • Real-time Data
                     </p>
                   </div>
                   <div className="ml-auto flex items-center space-x-3">
@@ -530,7 +577,7 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
-                      placeholder="Ask me about GitHub profiles, repositories, career advice, or development best practices..."
+                      placeholder="Ask me about GitHub profiles, repositories, career advice, or try 'analyze facebook/react'..."
                       className="w-full rounded-lg border border-gray-300 dark:border-gray-600 p-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none transition-all duration-200"
                       rows={2}
                       disabled={isLoading}
@@ -560,6 +607,8 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                   <span className="text-xs text-gray-500 dark:text-gray-400">Try:</span>
                   {[
                     'analyze @username', 
+                    'analyze facebook/react',
+                    'repos of torvalds',
                     'compare @user1 vs @user2', 
                     'repository best practices', 
                     'career growth tips',

@@ -1,5 +1,6 @@
 import { HfInference } from '@huggingface/inference';
 import axios from 'axios';
+import { analyzeRepositoryHealth, fetchUserRepos, fetchRepository } from '../api/github';
 
 // Initialize Hugging Face client
 const hf = new HfInference(import.meta.env.VITE_HUGGINGFACE_API_KEY);
@@ -68,7 +69,15 @@ Provide detailed, actionable advice that helps developers improve their GitHub p
 - Open source contribution strategies
 - Building technical reputation and network
 - Skill development roadmaps
-- Interview preparation and technical showcasing`
+- Interview preparation and technical showcasing`,
+
+  REPOSITORY_ANALYZER: `You are a repository analysis expert. Analyze repositories for:
+- Code quality and architecture
+- Documentation completeness
+- Community health and engagement
+- Development practices and workflows
+- Security and maintenance status
+- Growth and improvement opportunities`
 };
 
 // Advanced conversation context management
@@ -286,6 +295,45 @@ class ResponseProcessor {
       .replace(/([A-Z][a-z]+:)/g, '\n**$1**')
       .trim();
   }
+
+  static formatRepositoryAnalysis(analysis: any): string {
+    const { repository, healthScore, healthGrade, documentation, activity, issues, pullRequests, contributors } = analysis;
+    
+    return `🔍 **Repository Analysis: ${repository.name}**
+
+📊 **Health Score**: ${healthScore}/100 (Grade: ${healthGrade})
+
+📝 **Documentation Status**:
+${documentation.hasReadme ? '✅' : '❌'} README file
+${documentation.hasLicense ? '✅' : '❌'} License
+${documentation.hasContributing ? '✅' : '❌'} Contributing guidelines
+${documentation.hasCodeOfConduct ? '✅' : '❌'} Code of conduct
+
+🚀 **Activity Metrics**:
+• Recent commits (30 days): ${activity.recentCommits}
+• Last commit: ${activity.lastCommitDate ? new Date(activity.lastCommitDate).toLocaleDateString() : 'Unknown'}
+• Status: ${activity.isActive ? '🟢 Active' : '🔴 Inactive'}
+
+🤝 **Community Engagement**:
+• Contributors: ${contributors}
+• Open issues: ${issues.open}
+• Closed issues: ${issues.closed}
+• Open PRs: ${pullRequests.open}
+• Closed PRs: ${pullRequests.closed}
+
+⭐ **Repository Stats**:
+• Stars: ${repository.stargazers_count}
+• Forks: ${repository.forks_count}
+• Watchers: ${repository.watchers_count}
+• Language: ${repository.language || 'Not specified'}
+
+📈 **Recommendations**:
+${healthScore < 60 ? '• Improve documentation (README, contributing guidelines)' : ''}
+${!documentation.hasLicense ? '• Add a license file' : ''}
+${activity.recentCommits === 0 ? '• Increase development activity' : ''}
+${issues.open > issues.closed ? '• Address open issues' : ''}
+${contributors < 2 ? '• Encourage community contributions' : ''}`;
+  }
 }
 
 // Advanced intent detection and routing
@@ -302,7 +350,14 @@ class IntentRouter {
     }
     
     if (lowerMessage.includes('repository') || lowerMessage.includes('repo')) {
+      if (lowerMessage.includes('analyze') || lowerMessage.includes('check') || lowerMessage.includes('info')) {
+        return 'ANALYZE_REPOSITORY';
+      }
       return 'REPOSITORY_ADVICE';
+    }
+    
+    if (lowerMessage.includes('repos of') || lowerMessage.includes('repositories of')) {
+      return 'LIST_USER_REPOS';
     }
     
     if (lowerMessage.includes('career') || lowerMessage.includes('job')) {
@@ -324,6 +379,8 @@ class IntentRouter {
     switch (intent) {
       case 'ANALYZE_PROFILE':
         return PROMPT_TEMPLATES.PROFILE_ANALYZER;
+      case 'ANALYZE_REPOSITORY':
+        return PROMPT_TEMPLATES.REPOSITORY_ANALYZER;
       case 'CODE_ADVICE':
         return PROMPT_TEMPLATES.CODE_REVIEWER;
       case 'CAREER_ADVICE':
@@ -336,6 +393,7 @@ class IntentRouter {
   static selectBestModel(intent: string): string[] {
     switch (intent) {
       case 'CODE_ADVICE':
+      case 'ANALYZE_REPOSITORY':
         return AI_MODELS.CODE_MODELS;
       case 'ANALYZE_PROFILE':
       case 'COMPARE_PROFILES':
@@ -344,6 +402,30 @@ class IntentRouter {
         return AI_MODELS.CHAT_MODELS;
     }
   }
+}
+
+// Repository parsing utilities
+function parseRepositoryReference(message: string): { owner: string; repo: string } | null {
+  // Match patterns like "owner/repo", "@owner/repo", "github.com/owner/repo"
+  const patterns = [
+    /(?:github\.com\/)?([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/,
+    /@([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/,
+    /([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      return { owner: match[1], repo: match[2] };
+    }
+  }
+  
+  return null;
+}
+
+function extractUsername(message: string): string | null {
+  const match = message.match(/@([a-zA-Z0-9_-]+)(?!\/)/) || message.match(/(?:repos of|repositories of)\s+([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
 }
 
 // Main API functions with advanced capabilities
@@ -379,6 +461,51 @@ export async function getChatbotResponse(userMessage: string, context?: any): Pr
     const intent = IntentRouter.detectIntent(userMessage);
     const promptTemplate = IntentRouter.getPromptTemplate(intent);
     const modelOptions = IntentRouter.selectBestModel(intent);
+
+    // Handle repository analysis
+    if (intent === 'ANALYZE_REPOSITORY') {
+      const repoRef = parseRepositoryReference(userMessage);
+      if (repoRef) {
+        try {
+          const analysis = await analyzeRepositoryHealth(repoRef.owner, repoRef.repo);
+          return ResponseProcessor.formatRepositoryAnalysis(analysis);
+        } catch (error) {
+          return `❌ Could not analyze repository ${repoRef.owner}/${repoRef.repo}. Please make sure the repository exists and is public.`;
+        }
+      } else {
+        return '📝 Please specify a repository in the format "owner/repo" or "github.com/owner/repo" to analyze.';
+      }
+    }
+
+    // Handle user repositories listing
+    if (intent === 'LIST_USER_REPOS') {
+      const username = extractUsername(userMessage);
+      if (username) {
+        try {
+          const repos = await fetchUserRepos(username);
+          const topRepos = repos
+            .filter(repo => !repo.fork)
+            .sort((a, b) => b.stargazers_count - a.stargazers_count)
+            .slice(0, 10);
+
+          let response = `📚 **Top repositories for @${username}**:\n\n`;
+          
+          topRepos.forEach((repo, index) => {
+            response += `${index + 1}. **${repo.name}** ⭐ ${repo.stargazers_count} 🍴 ${repo.forks_count}\n`;
+            response += `   ${repo.description || 'No description'}\n`;
+            response += `   Language: ${repo.language || 'Not specified'}\n\n`;
+          });
+
+          response += `\n💡 To analyze a specific repository, type: "analyze ${username}/repository-name"`;
+          
+          return response;
+        } catch (error) {
+          return `❌ Could not fetch repositories for @${username}. Please make sure the username is correct.`;
+        }
+      } else {
+        return '👤 Please specify a username like "repos of username" or "repositories of @username".';
+      }
+    }
 
     // Build enhanced prompt with context
     const recentContext = conversationContext.getRecentContext(3);
@@ -443,8 +570,8 @@ Please provide a helpful, detailed response:`;
     // Fallback response with helpful suggestions
     return `I'm here to help with GitHub-related questions! You can ask me about:
 
-🔍 **Profile Analysis**: "analyze my GitHub profile" or "how to improve my profile"
-📊 **Repository Tips**: "best practices for repositories" or "how to organize my repos"
+🔍 **Profile Analysis**: "analyze @username" or "repos of username"
+📊 **Repository Analysis**: "analyze owner/repo" or "check facebook/react"
 💼 **Career Advice**: "GitHub for job applications" or "building a developer portfolio"
 🚀 **Growth Strategies**: "how to get more followers" or "open source contribution tips"
 
