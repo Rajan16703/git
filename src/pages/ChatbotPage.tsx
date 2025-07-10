@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, Send, Bot, User, Sparkles, GitBranch, Star, Users, Code, Zap, TrendingUp, AlertCircle, CheckCircle, Clock, Cpu, FolderOpen, Search } from 'lucide-react';
-import { getChatbotResponse, analyzeProfile, compareProfiles, getRepositoryAdvice, testHuggingFaceAPI } from '../services/ai';
+import { getChatbotResponse, analyzeProfile, compareProfiles, getRepositoryAdvice, getAPIStatus } from '../services/ai';
 import { fetchCompleteProfile } from '../api/github';
 import { ProfileWithMetrics } from '../types';
 
@@ -32,7 +32,17 @@ const ChatbotPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [profiles, setProfiles] = useState<ProfileWithMetrics[]>([]);
-  const [apiStatus, setApiStatus] = useState<'checking' | 'working' | 'error'>('checking');
+  const [apiStatus, setApiStatus] = useState<{
+    huggingFace: boolean;
+    gemini: boolean;
+    hasAnyProvider: boolean;
+    status: 'checking' | 'working' | 'partial' | 'error';
+  }>({
+    huggingFace: false,
+    gemini: false,
+    hasAnyProvider: false,
+    status: 'checking'
+  });
   const [typingIndicator, setTypingIndicator] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -99,38 +109,35 @@ const ChatbotPage: React.FC = () => {
   useEffect(() => {
     const checkAPIStatus = async () => {
       try {
-        if (!import.meta.env.VITE_HUGGINGFACE_API_KEY) {
-          setApiStatus('error');
-          setMessages(prev => [...prev, {
-            text: "⚠️ AI service is not properly configured. Hugging Face API key is missing.",
-            isBot: true,
-            timestamp: new Date(),
-            type: 'error'
-          }]);
-          return;
-        }
 
         setMessages(prev => [...prev, {
-          text: "🔍 Testing AI services...",
+          text: "🔍 Initializing advanced AI services...",
           isBot: true,
           timestamp: new Date(),
           type: 'loading'
         }]);
 
-        const hfWorking = await testHuggingFaceAPI();
+        const status = await getAPIStatus();
         
-        if (hfWorking) {
-          setApiStatus('working');
+        setApiStatus({
+          ...status,
+          status: status.hasAnyProvider ? 'working' : 'error'
+        });
+        
+        if (status.hasAnyProvider) {
+          const providers = [];
+          if (status.huggingFace) providers.push('Hugging Face');
+          if (status.gemini) providers.push('Google Gemini');
+          
           setMessages(prev => [...prev, {
-            text: "✅ Advanced AI services are online and ready! Powered by Hugging Face's latest models including DialoGPT, CodeBERT, and specialized GitHub analysis models.\n\n🆕 **Repository Analysis Feature**: Now you can analyze any GitHub repository by typing commands like:\n• \"analyze facebook/react\"\n• \"check microsoft/vscode\"\n• \"repos of username\"",
+            text: `✅ Advanced AI services are online and ready!\n\n🤖 **Active Providers**: ${providers.join(', ')}\n🔧 **Capabilities**: Profile analysis, repository insights, code review, career advice\n\n🆕 **Repository Analysis Feature**: Now you can analyze any GitHub repository by typing commands like:\n• \"analyze facebook/react\"\n• \"check microsoft/vscode\"\n• \"repos of username\"\n\n💡 **API Configuration**: Update your API keys in src/config/api.ts for full functionality.`,
             isBot: true,
             timestamp: new Date(),
             type: 'success'
           }]);
         } else {
-          setApiStatus('error');
           setMessages(prev => [...prev, {
-            text: "❌ AI services are currently unavailable. Please check your connection and try again.",
+            text: `❌ AI services need configuration.\n\n🔧 **Setup Required**:\n${status.validation.issues.map(issue => `• ${issue}`).join('\n')}\n\n📝 **Instructions**: Update your API keys in src/config/api.ts to enable AI features.`,
             isBot: true,
             timestamp: new Date(),
             type: 'error'
@@ -138,7 +145,7 @@ const ChatbotPage: React.FC = () => {
         }
       } catch (error) {
         console.error('API Status Check Error:', error);
-        setApiStatus('error');
+        setApiStatus(prev => ({ ...prev, status: 'error' }));
         setMessages(prev => [...prev, {
           text: "❌ There was an issue checking the AI service status. Some features may not work properly.",
           isBot: true,
@@ -226,28 +233,35 @@ const ChatbotPage: React.FC = () => {
         }
       } else if (userMessage.toLowerCase().includes('test api') || userMessage.toLowerCase().includes('api status')) {
         setMessages(prev => [...prev, {
-          text: "🧪 Running comprehensive API diagnostics...",
+          text: "🧪 Running comprehensive AI system diagnostics...",
           isBot: true,
           timestamp: new Date(),
           type: 'loading'
         }]);
         
-        const hfWorking = await testHuggingFaceAPI();
+        const status = await getAPIStatus();
+        
         response = `🔧 **Advanced AI System Status**:
 
-✅ **Hugging Face API**: ${hfWorking ? 'Operational' : 'Unavailable'}
-🤖 **Available Models**: DialoGPT, CodeBERT, GPT-2, RoBERTa
-🚀 **Features**: Profile analysis, repository analysis, code review, career advice
-⚡ **Response Time**: ~2-5 seconds
-🔄 **Fallback Systems**: Multiple model redundancy
+🤖 **Hugging Face API**: ${status.huggingFace ? '✅ Operational' : '❌ Not configured'}
+🧠 **Google Gemini API**: ${status.gemini ? '✅ Operational' : '❌ Not configured'}
+⚡ **System Status**: ${status.hasAnyProvider ? '🟢 Ready' : '🔴 Needs Setup'}
+
+📋 **Available Features**:
+${status.hasAnyProvider ? '• Profile analysis and optimization\n• Repository health analysis\n• Code quality assessment\n• Career development advice\n• Multi-provider AI fallback' : '• Limited functionality (API keys needed)'}
+
+🔧 **Configuration Issues**:
+${status.validation.issues.length > 0 ? status.validation.issues.map(issue => `• ${issue}`).join('\n') : '• All APIs configured correctly'}
 
 🆕 **Repository Analysis**: 
 • Analyze any repo: "analyze owner/repo"
 • List user repos: "repos of username"
 • Get detailed insights on code quality, documentation, and community health
 
-${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️ Some features may be limited. Please try again later.'}`;
-        messageType = hfWorking ? 'success' : 'error';
+📝 **Setup Instructions**: Update API keys in src/config/api.ts
+
+${status.hasAnyProvider ? '🎉 AI services ready! Ask me anything about GitHub!' : '⚠️ Configure API keys for full functionality.'}`;
+        messageType = status.hasAnyProvider ? 'success' : 'error';
       } else {
         // Enhanced general chat with context awareness
         setMessages(prev => [...prev, {
@@ -364,17 +378,19 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
   };
 
   const getStatusColor = () => {
-    switch (apiStatus) {
+    switch (apiStatus.status) {
       case 'working': return 'text-green-600 dark:text-green-400';
+      case 'partial': return 'text-yellow-600 dark:text-yellow-400';
       case 'error': return 'text-red-600 dark:text-red-400';
       default: return 'text-yellow-600 dark:text-yellow-400';
     }
   };
 
   const getStatusText = () => {
-    switch (apiStatus) {
-      case 'working': return 'Advanced AI Online';
-      case 'error': return 'Service Issues';
+    switch (apiStatus.status) {
+      case 'working': return `AI Online (${[apiStatus.huggingFace && 'HF', apiStatus.gemini && 'Gemini'].filter(Boolean).join(', ')})`;
+      case 'partial': return 'Partial AI Available';
+      case 'error': return 'Setup Required';
       default: return 'Initializing...';
     }
   };
@@ -387,22 +403,22 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
             <div className="relative">
               <Bot className="h-16 w-16 text-blue-600" />
               <Cpu className="h-6 w-6 text-purple-500 absolute -top-1 -right-1" />
-              {apiStatus === 'working' && (
+              {apiStatus.status === 'working' && (
                 <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse"></div>
               )}
-              {apiStatus === 'error' && (
+              {apiStatus.status === 'error' && (
                 <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></div>
               )}
             </div>
           </div>
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Advanced GitHub AI Assistant
+            Multi-Provider GitHub AI Assistant
           </h1>
           <p className="text-gray-600 dark:text-gray-300 text-lg">
-            Powered by cutting-edge Hugging Face AI models for intelligent GitHub optimization
+            Powered by Hugging Face & Google Gemini for intelligent GitHub optimization
           </p>
           <div className="mt-2 flex justify-center items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'} ${apiStatus === 'working' ? 'animate-pulse' : ''}`}></div>
+            <div className={`w-2 h-2 rounded-full ${apiStatus.status === 'working' ? 'bg-green-500' : apiStatus.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'} ${apiStatus.status === 'working' ? 'animate-pulse' : ''}`}></div>
             <span className={`text-sm ${getStatusColor()}`}>
               {getStatusText()}
             </span>
@@ -415,7 +431,7 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sticky top-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                 <Zap className="h-5 w-5 mr-2 text-yellow-500" />
-                Quick Actions
+                AI Quick Actions
               </h3>
               <div className="space-y-3">
                 {quickActions.map((action, index) => (
@@ -448,11 +464,11 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                   <div className="flex items-center mb-1">
                     <Cpu className="h-4 w-4 text-blue-600 mr-2" />
                     <span className="font-medium text-blue-900 dark:text-blue-300 text-sm">
-                      System Diagnostics
+                      AI System Status
                     </span>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-400">
-                    Test all AI services and models
+                    Check Hugging Face & Gemini APIs
                   </p>
                 </button>
               </div>
@@ -489,14 +505,14 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                 <div className="flex items-center">
                   <Bot className="h-8 w-8 text-blue-600 mr-3" />
                   <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Advanced GitHub AI Assistant</h3>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Multi-Provider AI Assistant</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Powered by Hugging Face • Multi-Model AI • Repository Analysis • Real-time Data
+                      Hugging Face + Google Gemini • Repository Analysis • Real-time GitHub Data
                     </p>
                   </div>
                   <div className="ml-auto flex items-center space-x-3">
                     <div className="flex items-center space-x-2">
-                      <div className={`w-2 h-2 rounded-full ${apiStatus === 'working' ? 'bg-green-500 animate-pulse' : apiStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${apiStatus.status === 'working' ? 'bg-green-500 animate-pulse' : apiStatus.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
                       <span className={`text-sm font-medium ${getStatusColor()}`}>
                         {getStatusText()}
                       </span>
@@ -577,7 +593,7 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyPress={handleKeyPress}
-                      placeholder="Ask me about GitHub profiles, repositories, career advice, or try 'analyze facebook/react'..."
+                      placeholder="Ask me about GitHub profiles, repositories, career advice, or try 'test api' to check system status..."
                       className="w-full rounded-lg border border-gray-300 dark:border-gray-600 p-3 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none transition-all duration-200"
                       rows={2}
                       disabled={isLoading}
@@ -606,13 +622,13 @@ ${hfWorking ? '🎉 All systems are go! Ask me anything about GitHub!' : '⚠️
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="text-xs text-gray-500 dark:text-gray-400">Try:</span>
                   {[
+                    'test api',
                     'analyze @username', 
                     'analyze facebook/react',
                     'repos of torvalds',
                     'compare @user1 vs @user2', 
                     'repository best practices', 
-                    'career growth tips',
-                    'test api'
+                    'career growth tips'
                   ].map((example, index) => (
                     <button
                       key={index}
